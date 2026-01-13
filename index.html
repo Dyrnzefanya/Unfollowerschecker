@@ -209,6 +209,16 @@
             border-left: 4px solid #c33;
         }
 
+        .debug {
+            background: #e3f2fd;
+            border: 1px solid #2196f3;
+            padding: 10px;
+            border-radius: 8px;
+            margin: 10px 0;
+            font-size: 12px;
+            color: #1565c0;
+        }
+
         @media (max-width: 600px) {
             .header h1 {
                 font-size: 22px;
@@ -256,6 +266,7 @@
             </div>
 
             <div id="errorMsg" class="error hidden"></div>
+            <div id="debugMsg" class="debug hidden"></div>
 
             <div id="results" class="results hidden">
                 <div class="stats">
@@ -292,6 +303,7 @@
         const analyzeBtn = document.getElementById('analyzeBtn');
         const results = document.getElementById('results');
         const errorMsg = document.getElementById('errorMsg');
+        const debugMsg = document.getElementById('debugMsg');
 
         // Setup drag and drop
         setupDragDrop(followersBox, followersFile);
@@ -359,16 +371,56 @@
             }
         }
 
+        function extractUsername(item) {
+            // Coba berbagai struktur yang mungkin
+            if (item.string_list_data && item.string_list_data.length > 0) {
+                return item.string_list_data[0].value || item.string_list_data[0].href?.split('/').filter(x => x).pop();
+            }
+            
+            // Struktur alternatif
+            if (item.value) {
+                return item.value;
+            }
+            
+            if (item.href) {
+                return item.href.split('/').filter(x => x).pop();
+            }
+
+            return null;
+        }
+
         function analyzeData() {
             errorMsg.classList.add('hidden');
+            debugMsg.classList.add('hidden');
             
             try {
+                console.log('Followers data:', followersData);
+                console.log('Following data:', followingData);
+
                 // Extract usernames dari followers
                 const followers = new Set();
-                if (Array.isArray(followersData)) {
-                    followersData.forEach(item => {
-                        if (item.string_list_data && item.string_list_data[0]) {
-                            followers.add(item.string_list_data[0].value);
+                let followersList = followersData;
+                
+                // Cek apakah data di dalam key tertentu
+                if (followersData.relationships_followers) {
+                    followersList = followersData.relationships_followers;
+                } else if (followersData.followers) {
+                    followersList = followersData.followers;
+                } else if (!Array.isArray(followersData)) {
+                    // Coba cari array pertama dalam object
+                    for (let key in followersData) {
+                        if (Array.isArray(followersData[key])) {
+                            followersList = followersData[key];
+                            break;
+                        }
+                    }
+                }
+
+                if (Array.isArray(followersList)) {
+                    followersList.forEach(item => {
+                        const username = extractUsername(item);
+                        if (username) {
+                            followers.add(username);
                         }
                     });
                 }
@@ -376,15 +428,38 @@
                 // Extract usernames dari following
                 const following = [];
                 const followingSet = new Set();
+                let followingList = followingData;
+
+                // Cek berbagai kemungkinan struktur
                 if (followingData.relationships_following) {
-                    followingData.relationships_following.forEach(item => {
-                        if (item.string_list_data && item.string_list_data[0]) {
-                            const username = item.string_list_data[0].value;
+                    followingList = followingData.relationships_following;
+                } else if (followingData.following) {
+                    followingList = followingData.following;
+                } else if (!Array.isArray(followingData)) {
+                    // Coba cari array pertama dalam object
+                    for (let key in followingData) {
+                        if (Array.isArray(followingData[key])) {
+                            followingList = followingData[key];
+                            break;
+                        }
+                    }
+                }
+
+                if (Array.isArray(followingList)) {
+                    followingList.forEach(item => {
+                        const username = extractUsername(item);
+                        if (username) {
                             following.push(username);
                             followingSet.add(username);
                         }
                     });
                 }
+
+                console.log('Followers:', followers);
+                console.log('Following:', followingSet);
+
+                // Debug info
+                showDebug(`Berhasil parse: ${followers.size} followers, ${followingSet.size} following`);
 
                 // Cari yang tidak follow back
                 const unfollowers = following.filter(username => !followers.has(username));
@@ -415,13 +490,20 @@
                 results.scrollIntoView({ behavior: 'smooth' });
 
             } catch (err) {
+                console.error('Error:', err);
                 showError('Terjadi kesalahan saat menganalisis data: ' + err.message);
+                showDebug('Error detail: ' + err.stack);
             }
         }
 
         function showError(message) {
             errorMsg.textContent = message;
             errorMsg.classList.remove('hidden');
+        }
+
+        function showDebug(message) {
+            debugMsg.textContent = message;
+            debugMsg.classList.remove('hidden');
         }
     </script>
 </body>
